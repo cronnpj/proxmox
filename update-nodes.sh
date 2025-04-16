@@ -32,13 +32,13 @@ for NODE in "${NODES[@]}"; do
     echo "" >> "$SUMMARY_LOG"
 done
 
-#echo ""
-#read -p "Do you want to update the LXC containers on this host? (y/n): " lxc_choice
-#if [[ "$lxc_choice" =~ ^[Yy]$ ]]; then
+# echo ""
+# read -p "Do you want to update the LXC containers on this host? (y/n): " lxc_choice
+# if [[ "$lxc_choice" =~ ^[Yy]$ ]]; then
 #    echo "Running LXC container update script..."
 #    bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/update-lxcs.sh)"
-#else
+# else
 #    echo "Skipping LXC container updates."
-#fi
+# fi
 
 echo "Update process completed. Summary log saved to $SUMMARY_LOG"
