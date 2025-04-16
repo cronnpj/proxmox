@@ -14,6 +14,10 @@ for NODE in "${NODES[@]}"; do
     echo "Updating Proxmox node at $NODE..."
     echo -n "$NODE: " >> "$SUMMARY_LOG"
     ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "apt update && apt -y full-upgrade" > /tmp/update_$NODE.log 2>&1
+    KERNEL_INFO=$(ssh root@$NODE "uname -r")
+    UPTIME_INFO=$(ssh root@$NODE "uptime -p")
+    echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
+
     if [[ $? -eq 0 ]]; then
         echo "✅ Success" >> "$SUMMARY_LOG"
     else
@@ -40,5 +44,9 @@ done
 # else
 #    echo "Skipping LXC container updates."
 # fi
+
+echo ""
+echo "===== Summary ====="
+grep -E '^[0-9]' "$SUMMARY_LOG"
 
 echo "Update process completed. Summary log saved to $SUMMARY_LOG"
