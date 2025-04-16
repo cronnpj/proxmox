@@ -14,13 +14,7 @@ for NODE in "${NODES[@]}"; do
     echo "Updating Proxmox node at $NODE..."
     echo -n "$NODE: " >> "$SUMMARY_LOG"
     ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "apt update && apt -y full-upgrade" > /tmp/update_$NODE.log 2>&1
-
-    if [[ $? -eq 0 ]]; then
-        echo "✅ Success" >> "$SUMMARY_LOG"
-    else
-        echo "❌ Failed (see /tmp/update_$NODE.log)" >> "$SUMMARY_LOG"
-    fi
-
+    
     # Check kernel and uptime    
     KERNEL_INFO=$(ssh root@$NODE "uname -r")
     UPTIME_INFO=$(ssh root@$NODE "uptime -p")
@@ -29,7 +23,15 @@ for NODE in "${NODES[@]}"; do
     # Check to see if Reboot is needed
     REBOOT_NEEDED=$(ssh root@$NODE "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'")
     echo "$REBOOT_NEEDED" >> "$SUMMARY_LOG"
-    
+
+    if [[ $? -eq 0 ]]; then
+        echo "✅ Success" >> "$SUMMARY_LOG"
+    else
+        echo "❌ Failed (see /tmp/update_$NODE.log)" >> "$SUMMARY_LOG"
+    fi
+
+
+
 done
 
 echo "" >> "$SUMMARY_LOG"
