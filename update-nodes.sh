@@ -20,16 +20,16 @@ for NODE in "${NODES[@]}"; do
     REBOOT_NEEDED=$(ssh root@$NODE "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'")
     echo "$REBOOT_NEEDED" >> "$SUMMARY_LOG"
 
+   # Check kernel and uptime    
+    KERNEL_INFO=$(ssh root@$NODE "uname -r")
+    UPTIME_INFO=$(ssh root@$NODE "uptime -p")
+    echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
+
     if [[ $? -eq 0 ]]; then
         echo "✅ Success" >> "$SUMMARY_LOG"
     else
         echo "❌ Failed (see /tmp/update_$NODE.log)" >> "$SUMMARY_LOG"
     fi
-
-    # Check kernel and uptime    
-    KERNEL_INFO=$(ssh root@$NODE "uname -r")
-    UPTIME_INFO=$(ssh root@$NODE "uptime -p")
-    echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
 
 done
 
