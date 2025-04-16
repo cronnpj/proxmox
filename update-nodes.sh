@@ -16,11 +16,6 @@ for NODE in "${NODES[@]}"; do
     echo -n "$NODE: " >> "$SUMMARY_LOG"
     ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "apt update && apt -y full-upgrade" > /tmp/update_$NODE.log 2>&1
 
-    # Check kernel and uptime    
-    KERNEL_INFO=$(ssh root@$NODE "uname -r")
-    UPTIME_INFO=$(ssh root@$NODE "uptime -p")
-    echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
-
     # Check to see if Reboot is needed
     REBOOT_NEEDED=$(ssh root@$NODE "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'")
     echo "$REBOOT_NEEDED" >> "$SUMMARY_LOG"
@@ -31,7 +26,10 @@ for NODE in "${NODES[@]}"; do
         echo "❌ Failed (see /tmp/update_$NODE.log)" >> "$SUMMARY_LOG"
     fi
 
-
+    # Check kernel and uptime    
+    KERNEL_INFO=$(ssh root@$NODE "uname -r")
+    UPTIME_INFO=$(ssh root@$NODE "uptime -p")
+    echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
 
 done
 
