@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Node IPs
-NODES=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
+# NODES=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
+NODES=(136.204.36.19 136.204.36.20)
 
 # Log and summary file
 SUMMARY_LOG="/root/proxmox-update-summary.log"
@@ -14,7 +15,7 @@ for NODE in "${NODES[@]}"; do
     echo "Updating Proxmox node at $NODE..."
     echo -n "$NODE: " >> "$SUMMARY_LOG"
     ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "apt update && apt -y full-upgrade" > /tmp/update_$NODE.log 2>&1
-    
+
     # Check kernel and uptime    
     KERNEL_INFO=$(ssh root@$NODE "uname -r")
     UPTIME_INFO=$(ssh root@$NODE "uptime -p")
