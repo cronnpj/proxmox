@@ -32,7 +32,13 @@ for NODE in "${NODES[@]}"; do
     echo "" >> "$SUMMARY_LOG"
 done
 
-# OPTIONAL: Send the summary via email (requires mail or msmtp configured)
-# mail -s "Proxmox Update Report - $(date '+%Y-%m-%d')" your.email@example.com < "$SUMMARY_LOG"
+echo ""
+read -p "Do you want to update the LXC containers on this host? (y/n): " lxc_choice
+if [[ "$lxc_choice" =~ ^[Yy]$ ]]; then
+    echo "Running LXC container update script..."
+    bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/update-lxcs.sh)"
+else
+    echo "Skipping LXC container updates."
+fi
 
 echo "Update process completed. Summary log saved to $SUMMARY_LOG"
