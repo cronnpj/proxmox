@@ -2,7 +2,7 @@
 
 # Node IPs
 # NODES=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
-NODES=(136.204.36.19 136.204.36.20)
+NODES=(136.204.36.19)
 
 # Log and summary file
 SUMMARY_LOG="/root/proxmox-update-summary.log"
@@ -13,24 +13,28 @@ echo "----------------------------------" >> "$SUMMARY_LOG"
 # Update loop
 for NODE in "${NODES[@]}"; do
     echo "Updating Proxmox node at $NODE..."
-    echo -n "$NODE: " >> "$SUMMARY_LOG"
     ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "apt update && apt -y full-upgrade" > /tmp/update_$NODE.log 2>&1
 
-    # Check to see if Reboot is needed
-    REBOOT_NEEDED=$(ssh root@$NODE "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'")
-    echo "$REBOOT_NEEDED" >> "$SUMMARY_LOG"
-
-   # Check kernel and uptime    
-    KERNEL_INFO=$(ssh root@$NODE "uname -r")
-    UPTIME_INFO=$(ssh root@$NODE "uptime -p")
-    echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
-
     if [[ $? -eq 0 ]]; then
-        echo "✅ Success" >> "$SUMMARY_LOG"
+        echo "✅ $NODE updated successfully"
+        echo "$NODE: ✅ Success" >> "$SUMMARY_LOG"
     else
-        echo "❌ Failed (see /tmp/update_$NODE.log)" >> "$SUMMARY_LOG"
+        echo "❌ $NODE update failed"
+        echo "$NODE: ❌ Failed (see /tmp/update_$NODE.log)" >> "$SUMMARY_LOG"
+        continue
     fi
 
+    # Show kernel and uptime live
+    KERNEL_INFO=$(ssh root@$NODE "uname -r")
+    UPTIME_INFO=$(ssh root@$NODE "uptime -p")
+    echo "   Kernel: $KERNEL_INFO"
+    echo "   Uptime: $UPTIME_INFO"
+    echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
+
+    # Show reboot-needed status live
+    REBOOT_NEEDED=$(ssh root@$NODE "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'")
+    echo "   $REBOOT_NEEDED"
+    echo "$REBOOT_NEEDED" >> "$SUMMARY_LOG"
 done
 
 echo "" >> "$SUMMARY_LOG"
