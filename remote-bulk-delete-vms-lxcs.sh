@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # List of Proxmox host IPs
-# HOSTS=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
-HOSTS=(136.204.36.19)
+HOSTS=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
 
 # Check for whiptail
 if ! command -v whiptail &> /dev/null; then
@@ -16,15 +15,23 @@ for HOST in "${HOSTS[@]}"; do
     TMPFILE=$(mktemp)
     CHOICES=()
 
-    # Fetch remote VMs
-    while read -r VMID NAME; do
-        CHOICES+=("$VMID" "$NAME" "OFF")
-    done < <(ssh root@$HOST "qm list | awk 'NR>1 {print \$1, \$2}'")
+    # Fetch remote VMs with descriptions
+    for VMID in $(ssh root@$HOST "qm list | awk 'NR>1 {print \$1}'"); do
+        NAME=$(ssh root@$HOST "qm config $VMID | awk -F': ' '/^name/ {print \$2}'")
+        DESC=$(ssh root@$HOST "qm config $VMID | awk -F': ' '/^description/ {print \$2}'")
+        DISPLAY="${NAME:-$VMID}"
+        [[ -n "$DESC" ]] && DISPLAY="$DISPLAY - $DESC"
+        CHOICES+=("$VMID" "$DISPLAY" "OFF")
+    done
 
-    # Fetch remote LXCs
-    while read -r CTID NAME; do
-        CHOICES+=("$CTID" "$NAME" "OFF")
-    done < <(ssh root@$HOST "pct list | awk 'NR>1 {print \$1, \$2}'")
+    # Fetch remote LXCs with descriptions
+    for CTID in $(ssh root@$HOST "pct list | awk 'NR>1 {print \$1}'"); do
+        NAME=$(ssh root@$HOST "pct config $CTID | awk -F': ' '/^hostname/ {print \$2}'")
+        DESC=$(ssh root@$HOST "pct config $CTID | awk -F': ' '/^description/ {print \$2}'")
+        DISPLAY="${NAME:-$CTID}"
+        [[ -n "$DESC" ]] && DISPLAY="$DISPLAY - $DESC"
+        CHOICES+=("$CTID" "$DISPLAY" "OFF")
+    done
 
     # Skip if no items
     if [[ ${#CHOICES[@]} -eq 0 ]]; then
