@@ -1,47 +1,61 @@
 #!/bin/bash
 
-# List of Proxmox node IPs to iterate over
+# List of Proxmox node IPs
 # NODES=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
 NODES=(136.204.36.19)
 
-
 for NODE in "${NODES[@]}"; do
-    echo ""
     echo "Checking VMs and LXCs on $NODE..."
 
-    # Get the VM/LXC list and format for dialog
-    VM_LIST=$(ssh root@$NODE "qm list 2> >(grep -v 'invalid group member' >&2)" | awk 'NR>1 {print $1 " \"" $2 "\""}')
-    LXC_LIST=$(ssh root@$NODE "pct list" | awk 'NR>1 {print $1 " \"" $2 "\""}')
-    ALL_LIST=$(printf "%s\n%s" "$VM_LIST" "$LXC_LIST")
+    # Fetch VM/LXC info (suppress invalid group warnings)
+    VM_LIST=$(ssh root@$NODE "qm list 2> >(grep -v 'invalid group member' >&2)")
+    CT_LIST=$(ssh root@$NODE "pct list 2> >(grep -v 'invalid group member' >&2)")
 
-    if [[ -z "$ALL_LIST" ]]; then
+    # Format options: ID Name [type]
+    OPTIONS=()
+    while read -r ID NAME REST; do
+        [[ "$ID" == "VMID" || -z "$ID" ]] && continue
+        DESC=$(ssh root@$NODE "qm config $ID | grep -i description | cut -d ' ' -f2-" 2>/dev/null | cut -d '<' -f1)
+        POOL=$(ssh root@$NODE "pvesh get /nodes/$(hostname -s)/qemu/$ID/config --output-format=json" 2>/dev/null | jq -r '.pool // empty')
+        DISPLAY="$ID: $NAME"
+        [[ -n "$DESC" ]] && DISPLAY+=" - $DESC"
+        [[ -n "$POOL" ]] && DISPLAY+=" [Pool: $POOL]"
+        OPTIONS+=("$ID" "$DISPLAY" "OFF")
+    done <<< "$VM_LIST"
+
+    while read -r ID NAME STATUS IP REST; do
+        [[ "$ID" == "VMID" || -z "$ID" ]] && continue
+        DESC=$(ssh root@$NODE "pct config $ID | grep -i description | cut -d ' ' -f2-" 2>/dev/null | cut -d '<' -f1)
+        POOL=$(ssh root@$NODE "pvesh get /nodes/$(hostname -s)/lxc/$ID/config --output-format=json" 2>/dev/null | jq -r '.pool // empty')
+        DISPLAY="$ID: $NAME"
+        [[ -n "$DESC" ]] && DISPLAY+=" - $DESC"
+        [[ -n "$POOL" ]] && DISPLAY+=" [Pool: $POOL]"
+        OPTIONS+=("$ID" "$DISPLAY" "OFF")
+    done <<< "$CT_LIST"
+
+    if [[ ${#OPTIONS[@]} -eq 0 ]]; then
         echo "No VMs or LXCs found on $NODE."
         continue
     fi
 
-    # Use dialog to select which to delete
-    SELECTED=$(echo "$ALL_LIST" | dialog --stdout --separate-output --checklist "Select VMs or LXCs to DELETE on $NODE:" 20 70 15)
+    SELECTION=$(whiptail --title "Delete from $NODE" --checklist "Select VMs or LXCs to DELETE on $NODE:" 20 80 12 "${OPTIONS[@]}" 3>&1 1>&2 2>&3)
 
-    if [[ -z "$SELECTED" ]]; then
+    if [[ -z "$SELECTION" ]]; then
         echo "No selection made for $NODE. Skipping..."
         continue
     fi
 
-    for VMID in $SELECTED; do
-        if [[ "$VMID" =~ ^[0-9]+$ ]]; then
-            echo "Deleting $VMID on $NODE..."
-            ssh root@$NODE "
-                if qm status $VMID &>/dev/null; then
-                    qm shutdown $VMID --timeout 30
-                    qm destroy $VMID --purge
-                elif pct status $VMID &>/dev/null; then
-                    pct shutdown $VMID
-                    pct destroy $VMID
-                else
-                    echo 'VMID $VMID not found on $NODE.'
-                fi"
+    for ID in $SELECTION; do
+        ID=$(echo $ID | tr -d '"')
+        echo "Attempting to delete VM or LXC $ID on $NODE..."
+        ssh root@$NODE "qm status $ID" &>/dev/null
+        if [[ $? -eq 0 ]]; then
+            ssh root@$NODE "qm shutdown $ID --timeout 30 && qm destroy $ID --purge"
         else
-            echo "Invalid VMID: $VMID - skipping"
+            ssh root@$NODE "pct shutdown $ID --timeout 30 && pct destroy $ID"
         fi
     done
+
 done
+
+echo "Bulk deletion process completed."
