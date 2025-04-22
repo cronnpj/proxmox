@@ -1,2 +1,2 @@
 # proxmox
-Basic script for updating our proxmox cluster
+Basic scripts for updating and maintaining our Proxmox Cluster
