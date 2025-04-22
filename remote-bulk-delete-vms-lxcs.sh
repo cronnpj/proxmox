@@ -13,8 +13,9 @@ for NODE in "${NODES[@]}"; do
     QEMU_LIST=$(ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "qm list 2> >(grep -v 'invalid group member' >&2) | awk 'NR>1 {vmid=\$1; name=\$2; pool=\$NF; print vmid":"name":"pool}'")
     
     # Get list of LXCs (VMID, Status, Name)
-    LXC_LIST=$(ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "pct list | awk 'NR>1 {vmid=\$1; status=\$2; name=\$NF; print vmid":"name":""\$2""}'")
-
+    #LXC_LIST=$(ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "pct list | awk 'NR>1 {vmid=\$1; status=\$2; name=\$NF; print vmid":"name":""\$2""}'")
+    LXC_LIST=$(ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "pct list | awk 'NR>1 {vmid=\$1; status=\$2; name=\$NF; print vmid\":\"name\":\"\"status\"}'")
+    
     # Combine both lists
     COMBINED_LIST=$(echo -e "$QEMU_LIST
 $LXC_LIST" | grep -E '^[0-9]+:')
