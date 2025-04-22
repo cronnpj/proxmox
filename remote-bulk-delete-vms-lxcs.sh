@@ -1,70 +1,52 @@
 #!/bin/bash
 
-# List of Proxmox host IPs
-# HOSTS=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
-HOSTS=(136.204.36.19)
+# Proxmox cluster IPs
+# NODES=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
+NODES=(136.204.36.19)
 
-# Check for whiptail
-if ! command -v whiptail &> /dev/null; then
-    echo "whiptail is required. Install it with: apt install whiptail"
-    exit 1
-fi
+for NODE in "${NODES[@]}"; do
+    echo "Checking VMs and LXCs on $NODE..."
 
-for HOST in "${HOSTS[@]}"; do
-    echo "Checking $HOST for VMs/LXCs..."
+    VM_LIST=$(ssh root@$NODE \
+        "qm list | tail -n +2 | awk '{print \$1}' && pct list | tail -n +2 | awk '{print \$1}'")
 
-    TMPFILE=$(mktemp)
-    CHOICES=()
+    MENU_ITEMS=()
 
-    # Fetch remote VMs with descriptions
-    for VMID in $(ssh root@$HOST "qm list | awk 'NR>1 {print \$1}'"); do
-        NAME=$(ssh root@$HOST "qm config $VMID | awk -F': ' '/^name/ {print \$2}'")
-        DESC=$(ssh root@$HOST "qm config $VMID | awk -F': ' '/^description/ {print \$2}'")
-        DISPLAY="${NAME:-$VMID}"
-        [[ -n "$DESC" ]] && DISPLAY="$DISPLAY - $DESC"
-        CHOICES+=("$VMID" "$DISPLAY" "OFF")
+    for ID in $VM_LIST; do
+        if ssh root@$NODE qm status $ID &>/dev/null; then
+            NAME=$(ssh root@$NODE qm config $ID | grep -m1 '^name:' | cut -d ' ' -f2-)
+            DESC=$(ssh root@$NODE qm config $ID | grep -m1 '^description:' | cut -d ' ' -f2- | sed 's/<[^>]*>//g')
+            POOL=$(ssh root@$NODE grep -l "^$ID$" /etc/pve/pool/*/vmid | sed 's#.*/##' | head -n1)
+        else
+            NAME=$(ssh root@$NODE pct config $ID | grep -m1 '^hostname:' | cut -d ' ' -f2-)
+            DESC=$(ssh root@$NODE pct config $ID | grep -m1 '^description:' | cut -d ' ' -f2- | sed 's/<[^>]*>//g')
+            POOL=$(ssh root@$NODE grep -l "^$ID$" /etc/pve/pool/*/lxc | sed 's#.*/##' | head -n1)
+        fi
+
+        LABEL="$ID - $NAME"
+        [[ -n "$DESC" ]] && LABEL+=" :: $DESC"
+        [[ -n "$POOL" ]] && LABEL+=" [Pool: $POOL]"
+
+        MENU_ITEMS+=("$ID" "$LABEL" off)
     done
 
-    # Fetch remote LXCs with descriptions
-    for CTID in $(ssh root@$HOST "pct list | awk 'NR>1 {print \$1}'"); do
-        NAME=$(ssh root@$HOST "pct config $CTID | awk -F': ' '/^hostname/ {print \$2}'")
-        DESC=$(ssh root@$HOST "pct config $CTID | awk -F': ' '/^description/ {print \$2}'")
-        DISPLAY="${NAME:-$CTID}"
-        [[ -n "$DESC" ]] && DISPLAY="$DISPLAY - $DESC"
-        CHOICES+=("$CTID" "$DISPLAY" "OFF")
-    done
-
-    # Skip if no items
-    if [[ ${#CHOICES[@]} -eq 0 ]]; then
-        echo "No VMs or LXCs found on $HOST."
+    if [ ${#MENU_ITEMS[@]} -eq 0 ]; then
+        echo "No VMs or LXCs found on $NODE."
         continue
     fi
 
-    # Show selection menu
-    whiptail --title "Delete from $HOST" --checklist \
-    "Select VMs or LXCs to DELETE on $HOST:" 25 78 15 \
-    "${CHOICES[@]}" 2> "$TMPFILE"
+    CHOICES=$(dialog --separate-output --checklist "Select VMs or LXCs to DELETE on $NODE:" 20 80 15 \${MENU_ITEMS[@]} 3>&1 1>&2 2>&3)
 
-    if [[ $? -eq 0 ]]; then
-        SELECTED=$(cat "$TMPFILE")
-        echo "Selected for deletion on $HOST: $SELECTED"
-        for ID in $SELECTED; do
-            CLEAN_ID=$(echo "$ID" | tr -d '"')
-            if ssh root@$HOST "qm status $CLEAN_ID &>/dev/null"; then
-                echo "Deleting VM $CLEAN_ID on $HOST..."
-                ssh root@$HOST "qm destroy $CLEAN_ID"
-            elif ssh root@$HOST "pct status $CLEAN_ID &>/dev/null"; then
-                echo "Deleting LXC $CLEAN_ID on $HOST..."
-                ssh root@$HOST "pct destroy $CLEAN_ID"
-            else
-                echo "❌ Could not find $CLEAN_ID on $HOST"
-            fi
-        done
-    else
-        echo "No selection made for $HOST. Moving on..."
-    fi
+    for ID in $CHOICES; do
+        if ssh root@$NODE qm status $ID &>/dev/null; then
+            echo "Deleting VM $ID on $NODE..."
+            ssh root@$NODE "qm stop $ID && qm destroy $ID --purge --destroy-unreferenced-disks 1"
+        else
+            echo "Deleting LXC $ID on $NODE..."
+            ssh root@$NODE "pct shutdown $ID && pct destroy $ID"
+        fi
+    done
 
-    rm -f "$TMPFILE"
 done
 
 echo "Bulk deletion process complete."
