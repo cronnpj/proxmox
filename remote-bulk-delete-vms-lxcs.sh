@@ -2,7 +2,7 @@
 #
 #  LXC / VM delete helper for Proxmox VE
 #  Copyright (c) 2021‑2025 community‑scripts
-#  Author: MickLesk (CanbiZ)  |  Mod: 
+#  Author: MickLesk (CanbiZ)  |  Mod: modified to add VMs
 #  License: MIT
 
 set -eEuo pipefail
@@ -13,7 +13,7 @@ header_info() {
   cat <<"EOF"
     ____                                           ____       __     __     
    / __ \_________  _  ______ ___  ____  _  __    / __ \___  / /__  / /____ 
-  / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/     / / / / _ \/ / _ \/ __/ _ \
+  / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/     / / / / _ \/ / _ \/ __/ _\
  / ____/ /  / /_/ />  </ / / / / / /_/ />  <    / /_/ /  __/ /  __/ /_/  __/
 /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|   /_____/\___/_/\___/\__/\___/ 
 EOF
