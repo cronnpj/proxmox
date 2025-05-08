@@ -1,65 +1,97 @@
+#!/usr/bin/env bash
+#
+#  LXC / VM delete helper for Proxmox VE
+#  Copyright (c) 2021‑2025 community‑scripts
+#  Author: MickLesk (CanbiZ)  |  Mod: PatCronn‑mix
+#  License: MIT
 
-#!/bin/bash
+set -eEuo pipefail
 
-# Array of Proxmox node IPs
-#NODES=(136.204.36.19 136.204.36.20 136.204.36.21 136.204.36.22 136.204.36.23 136.204.36.24 136.204.36.25 136.204.36.26 136.204.36.27 136.204.36.28)
-NODES=(136.204.36.19)
+#####  ── helpers ────────────────────────────────────────────────────────────
+header_info() {
+  clear
+  cat <<"EOF"
+    ____                                          __   _  ________   ____       __     __     
+   / __ \_________  _  ______ ___  ____  _  __   / /  | |/ / ____/  / __ \___  / /__  / /____ 
+  / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/  / /   |   / / /      / / / / _ \/ / _ \/ __/ _ \
+ / ____/ /  / /_/ />  </ / / / / / /_/ />  <   / /___/   / /___   / /_/ /  __/ /  __/ /_/  __/
+/_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|  /_____/_/|_\____/  /_____/\___/_/\___/\__/\___/ 
+EOF
+}
 
-# Loop through each node
-for NODE in "${NODES[@]}"; do
-    echo "Checking VMs and LXCs on $NODE..."
+spinner() {
+  local pid=$1 delay=0.1 spin='|/-\'
+  while ps -p "$pid" &>/dev/null; do
+    printf ' [%c]  ' "$spin"
+    spin=${spin#?}${spin%"${spin#?}"}; sleep "$delay"; printf '\r'
+  done; printf '    \r'
+}
 
-    # Get list of QEMU VMs (VMID, Name, Pool)
-    QEMU_LIST=$(ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "qm list 2> >(grep -v 'invalid group member' >&2) | awk 'NR>1 {vmid=\$1; name=\$2; pool=\$NF; print vmid":"name":"pool}'")
-    
-    # Get list of LXCs (VMID, Status, Name)
-    #LXC_LIST=$(ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "pct list | awk 'NR>1 {vmid=\$1; status=\$2; name=\$NF; print vmid":"name":""\$2""}'")
-    LXC_LIST=$(ssh -o BatchMode=yes -o ConnectTimeout=5 root@$NODE "pct list | awk 'NR>1 {vmid=\$1; status=\$2; name=\$NF; print vmid\":\"name\":\"\"status\"}'")
-    
-    # Combine both lists
-    COMBINED_LIST=$(echo -e "$QEMU_LIST
-$LXC_LIST" | grep -E '^[0-9]+:')
+YW=$'\033[33m'; BL=$'\033[36m'; RD=$'\033[01;31m'; GN=$'\033[1;92m'; CL=$'\033[m'
+FORMAT="%-3s %-10s %-15s %-10s"   # Type  ID  Name  Status
 
-    if [[ -z "$COMBINED_LIST" ]]; then
-        echo "No VMs or LXCs found on $NODE. Skipping..."
-        continue
-    fi
+#####  ── intro / safety ─────────────────────────────────────────────────────
+header_info
+echo "Loading…"
 
-    # Build whiptail options string
-    OPTIONS=()
-    while IFS=: read -r ID NAME META; do
-        ENTRY="$ID: $NAME"
-        [[ -n "$META" ]] && ENTRY="$ENTRY ($META)"
-        OPTIONS+=("$ID" "$ENTRY" "off")
-    done <<< "$COMBINED_LIST"
+whiptail --backtitle "Proxmox VE Helper Scripts" \
+         --title     "Proxmox VE Guest Deletion" \
+         --yesno     "This will delete **containers and VMs** on host $(hostname).\nProceed?" 12 70 \
+  || exit 0
 
-    CHOICE=$(whiptail --title "Delete from $NODE" --checklist "Select VMs or LXCs to DELETE on $NODE:" 20 80 10 "${OPTIONS[@]}" 3>&1 1>&2 2>&3)
+#####  ── build guest list ───────────────────────────────────────────────────
+declare -A GTYPE   # map[VMID]=CT|VM
 
-    if [[ -z "$CHOICE" ]]; then
-        echo "No selection made for $NODE. Skipping..."
-        continue
-    fi
+guests_raw="$(
+  { pct list | tail -n +2 | awk '{printf "CT %s %s %s\n",$1,$2,$3}'; } ;\
+  { qm  list | tail -n +2 | awk '{printf "VM %s %s %s\n",$1,$2,$3}'; }
+)"
 
-    # Clean choice into array
-    IFS=' ' read -r -a TO_DELETE <<< "$CHOICE"
+if [[ -z "$guests_raw" ]]; then
+  whiptail --title "Delete Guests" --msgbox "No VMs or containers found on this node!" 10 60
+  exit 1
+fi
 
-    for ID in "${TO_DELETE[@]}"; do
-        CLEAN_ID=$(echo "$ID" | tr -d '"')
-        echo "Attempting to delete $CLEAN_ID on $NODE..."
+menu_items=()
+while read -r gtype gid gname gstate; do
+  GTYPE["$gid"]=$gtype
+  line=$(printf "$FORMAT" "$gtype" "$gid" "$gname" "$gstate")
+  menu_items+=("$gid" "$line" "OFF")
+done <<<"$guests_raw"
 
-        # Check if LXC or QEMU
-        if ssh root@$NODE pct status "$CLEAN_ID" &>/dev/null; then
-            ssh root@$NODE "pct shutdown $CLEAN_ID --force && pct destroy $CLEAN_ID"
-        elif ssh root@$NODE qm status "$CLEAN_ID" &>/dev/null; then
-            ssh root@$NODE "qm shutdown $CLEAN_ID --forceStop 1 && qm destroy $CLEAN_ID"
-        else
-            echo "Unable to determine type for $CLEAN_ID on $NODE."
-        fi
-    done
+CHOICES=$(whiptail --title "Select Guests to Delete" \
+                   --checklist "Space‑select, <OK> to continue" 25 70 15 \
+                   "${menu_items[@]}" 3>&2 2>&1 1>&3) || exit 0
 
-    echo "Node $NODE cleanup done."
-    echo "--------------------------"
+[[ -z "$CHOICES" ]] && { whiptail --msgbox "Nothing selected." 8 40; exit 0; }
 
+read -rp "Delete guests manually or automatically? (m/a) [m]: " DELETE_MODE
+DELETE_MODE=${DELETE_MODE:-m}
+
+#####  ── deletion loop ──────────────────────────────────────────────────────
+for id in $(tr -d '"' <<<"$CHOICES"); do
+  typ=${GTYPE[$id]}
+  if [[ "$typ" == "CT" ]]; then
+    state=$(pct status "$id" | awk '{print $2}')
+    [[ "$state" == "running" ]] && { echo -e "${BL}[Info]${GN} Stopping CT $id…${CL}"; pct stop "$id"; }
+    delete_cmd=("pct" "destroy" "$id" "-f")
+  else
+    state=$(qm status "$id" | awk '{print $2}')
+    [[ "$state" == "running" ]] && { echo -e "${BL}[Info]${GN} Stopping VM $id…${CL}"; qm stop "$id"; }
+    delete_cmd=("qm" "destroy" "$id" "--purge")
+  fi
+
+  if [[ "$DELETE_MODE" == "a" ]]; then
+    echo -e "${BL}[Info]${GN} Deleting $typ $id…${CL}"
+    "${delete_cmd[@]}" & spinner $!
+  else
+    read -rp "Delete $typ $id? (y/N): " CONFIRM
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo -e "${BL}[Info]${RD} Skipped $typ $id${CL}"; continue; }
+    echo -e "${BL}[Info]${GN} Deleting $typ $id…${CL}"
+    "${delete_cmd[@]}" & spinner $!
+  fi
 done
 
-echo "All node cleanup checks complete."
+#####  ── done ───────────────────────────────────────────────────────────────
+header_info
+echo -e "${GN}Deletion process completed.${CL}\n"
