@@ -63,4 +63,89 @@ for NODE in "${NODES[@]}"; do
   # Reboot-needed flag (Debian/Proxmox style)
   REBOOT_NEEDED=$(ssh "${SSH_OPTS[@]}" root@"$NODE" "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'" 2>/dev/null || echo "unknown")
   echo "   $REBOOT_NEEDED"
-  echo "$REBOOT_NEEDED" >> "$SUMMA_
+  echo "$REBOOT_NEEDED" >> "$SUMMARY_LOG"
+done
+
+# ----------------------------
+# 2) Update production Ubuntu LXCs by IP (SSH into the container)
+# ----------------------------
+echo "" >> "$SUMMARY_LOG"
+echo "Production LXC Updates (Ubuntu via SSH):" >> "$SUMMARY_LOG"
+echo "----------------------------------------" >> "$SUMMARY_LOG"
+
+if [[ ${#PROD_LXC_IPS[@]} -eq 0 ]]; then
+  echo "(none configured)" >> "$SUMMARY_LOG"
+else
+  for CIP in "${PROD_LXC_IPS[@]}"; do
+    echo "Updating production LXC at $CIP..."
+    LXC_LOG="$LXC_LOG_DIR/update_lxc_${CIP}.log"
+
+    ssh "${SSH_OPTS[@]}" root@"$CIP" \
+      "apt update && DEBIAN_FRONTEND=noninteractive apt -y dist-upgrade && apt -y autoremove" \
+      > "$LXC_LOG" 2>&1
+
+    if [[ $? -eq 0 ]]; then
+      echo "✅ $CIP updated successfully"
+      echo "$CIP: ✅ Success (LXC)" >> "$SUMMARY_LOG"
+      LXC_REBOOT=$(ssh "${SSH_OPTS[@]}" root@"$CIP" \
+        "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'" \
+        2>/dev/null || echo "unknown")
+      echo "   $LXC_REBOOT"
+      echo "$CIP: $LXC_REBOOT" >> "$SUMMARY_LOG"
+    else
+      echo "❌ $CIP update failed"
+      echo "$CIP: ❌ Failed (see $LXC_LOG)" >> "$SUMMARY_LOG"
+    fi
+  done
+fi
+
+# ----------------------------
+# 3) Append detailed logs to summary file
+# ----------------------------
+echo "" >> "$SUMMARY_LOG"
+echo "Detailed Node Reports:" >> "$SUMMARY_LOG"
+echo "----------------------------------" >> "$SUMMARY_LOG"
+
+for NODE in "${NODES[@]}"; do
+  NODE_LOG="$NODE_LOG_DIR/update_${NODE}.log"
+  echo "----- $NODE -----" >> "$SUMMARY_LOG"
+  if [[ -f "$NODE_LOG" ]]; then
+    cat "$NODE_LOG" >> "$SUMMARY_LOG"
+  else
+    echo "(no log found)" >> "$SUMMARY_LOG"
+  fi
+  echo "" >> "$SUMMARY_LOG"
+done
+
+echo "" >> "$SUMMARY_LOG"
+echo "Detailed LXC Reports:" >> "$SUMMARY_LOG"
+echo "----------------------------------" >> "$SUMMARY_LOG"
+
+if [[ ${#PROD_LXC_IPS[@]} -gt 0 ]]; then
+  for CIP in "${PROD_LXC_IPS[@]}"; do
+    LXC_LOG="$LXC_LOG_DIR/update_lxc_${CIP}.log"
+    echo "----- LXC $CIP -----" >> "$SUMMARY_LOG"
+    if [[ -f "$LXC_LOG" ]]; then
+      cat "$LXC_LOG" >> "$SUMMARY_LOG"
+    else
+      echo "(no log found)" >> "$SUMMARY_LOG"
+    fi
+    echo "" >> "$SUMMARY_LOG"
+  done
+else
+  echo "(none configured)" >> "$SUMMARY_LOG"
+fi
+
+# ----------------------------
+# 4) Print summary
+# ----------------------------
+echo ""
+echo "===== Summary ====="
+# show the high-level per-host result lines
+grep -E '^[0-9]+\.' "$SUMMARY_LOG" 2>/dev/null || true
+grep -E '^[0-9]+\.[0-9]+' "$SUMMARY_LOG" 2>/dev/null || true
+# fallback: show success/fail lines
+grep -E '✅|❌' "$SUMMARY_LOG" || true
+
+echo ""
+echo "Update process completed. Summary log saved to $SUMMARY_LOG"
