@@ -1,19 +1,21 @@
 #!/bin/bash
 
-# ----------------------------
 # Proxmox node + production LXC updater
 # - Updates Proxmox nodes via SSH (apt full-upgrade)
 # - Updates selected production Ubuntu LXCs via SSH by IP (apt dist-upgrade)
-# ----------------------------
 
 set -u
+
+if [[ "$(id -u)" -ne 0 ]]; then
+  echo "ERROR: run as root."
+  exit 1
+fi
 
 # Proxmox node IPs (management network)
 NODES=(10.0.0.20 10.0.0.21 10.0.0.22 10.0.0.23 10.0.0.24 10.0.0.25 10.0.0.26 10.0.0.27 10.0.0.28)
 # For testing: NODES=(10.0.0.24)
 
 # Production Ubuntu LXC IPs (must be reachable via SSH from the machine running this script)
-# Add your containers here (examples shown). You mentioned "10.0.0.5"—put it in the list.
 PROD_LXC_IPS=(
   10.0.0.5
   # 10.0.0.6
@@ -25,7 +27,7 @@ SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-n
 
 # Log and summary file
 SUMMARY_LOG="/root/proxmox-update-summary.log"
-> "$SUMMARY_LOG"
+: > "$SUMMARY_LOG"
 {
   echo "Proxmox + Production LXC Update Report - $(date)"
   echo "----------------------------------------------"
@@ -53,21 +55,19 @@ for NODE in "${NODES[@]}"; do
     continue
   fi
 
-  # Show kernel and uptime
   KERNEL_INFO=$(ssh "${SSH_OPTS[@]}" root@"$NODE" "uname -r" 2>/dev/null || echo "unknown")
   UPTIME_INFO=$(ssh "${SSH_OPTS[@]}" root@"$NODE" "uptime -p" 2>/dev/null || echo "unknown")
   echo "   Kernel: $KERNEL_INFO"
   echo "   Uptime: $UPTIME_INFO"
-  echo "Kernel: $KERNEL_INFO, Uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
+  echo "$NODE kernel: $KERNEL_INFO, uptime: $UPTIME_INFO" >> "$SUMMARY_LOG"
 
-  # Reboot-needed flag (Debian/Proxmox style)
   REBOOT_NEEDED=$(ssh "${SSH_OPTS[@]}" root@"$NODE" "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'" 2>/dev/null || echo "unknown")
   echo "   $REBOOT_NEEDED"
-  echo "$REBOOT_NEEDED" >> "$SUMMARY_LOG"
+  echo "$NODE: $REBOOT_NEEDED" >> "$SUMMARY_LOG"
 done
 
 # ----------------------------
-# 2) Update production Ubuntu LXCs by IP (SSH into the container)
+# 2) Update production Ubuntu LXCs by IP
 # ----------------------------
 echo "" >> "$SUMMARY_LOG"
 echo "Production LXC Updates (Ubuntu via SSH):" >> "$SUMMARY_LOG"
@@ -87,9 +87,11 @@ else
     if [[ $? -eq 0 ]]; then
       echo "✅ $CIP updated successfully"
       echo "$CIP: ✅ Success (LXC)" >> "$SUMMARY_LOG"
+
       LXC_REBOOT=$(ssh "${SSH_OPTS[@]}" root@"$CIP" \
         "[ -f /var/run/reboot-required ] && echo '🔁 Reboot Required' || echo '✅ No Reboot Needed'" \
         2>/dev/null || echo "unknown")
+
       echo "   $LXC_REBOOT"
       echo "$CIP: $LXC_REBOOT" >> "$SUMMARY_LOG"
     else
@@ -109,11 +111,7 @@ echo "----------------------------------" >> "$SUMMARY_LOG"
 for NODE in "${NODES[@]}"; do
   NODE_LOG="$NODE_LOG_DIR/update_${NODE}.log"
   echo "----- $NODE -----" >> "$SUMMARY_LOG"
-  if [[ -f "$NODE_LOG" ]]; then
-    cat "$NODE_LOG" >> "$SUMMARY_LOG"
-  else
-    echo "(no log found)" >> "$SUMMARY_LOG"
-  fi
+  [[ -f "$NODE_LOG" ]] && cat "$NODE_LOG" >> "$SUMMARY_LOG" || echo "(no log found)" >> "$SUMMARY_LOG"
   echo "" >> "$SUMMARY_LOG"
 done
 
@@ -125,11 +123,7 @@ if [[ ${#PROD_LXC_IPS[@]} -gt 0 ]]; then
   for CIP in "${PROD_LXC_IPS[@]}"; do
     LXC_LOG="$LXC_LOG_DIR/update_lxc_${CIP}.log"
     echo "----- LXC $CIP -----" >> "$SUMMARY_LOG"
-    if [[ -f "$LXC_LOG" ]]; then
-      cat "$LXC_LOG" >> "$SUMMARY_LOG"
-    else
-      echo "(no log found)" >> "$SUMMARY_LOG"
-    fi
+    [[ -f "$LXC_LOG" ]] && cat "$LXC_LOG" >> "$SUMMARY_LOG" || echo "(no log found)" >> "$SUMMARY_LOG"
     echo "" >> "$SUMMARY_LOG"
   done
 else
@@ -141,11 +135,7 @@ fi
 # ----------------------------
 echo ""
 echo "===== Summary ====="
-# show the high-level per-host result lines
-grep -E '^[0-9]+\.' "$SUMMARY_LOG" 2>/dev/null || true
-grep -E '^[0-9]+\.[0-9]+' "$SUMMARY_LOG" 2>/dev/null || true
-# fallback: show success/fail lines
-grep -E '✅|❌' "$SUMMARY_LOG" || true
+grep -E '✅|❌|Reboot Required|No Reboot Needed' "$SUMMARY_LOG" || true
 
 echo ""
 echo "Update process completed. Summary log saved to $SUMMARY_LOG"
