@@ -17,9 +17,9 @@ NODES=(10.0.0.20 10.0.0.21 10.0.0.22 10.0.0.23 10.0.0.24 10.0.0.25 10.0.0.26 10.
 
 # Production Ubuntu LXC IPs (must be reachable via SSH from the machine running this script)
 PROD_LXC_IPS=(
-  10.0.0.5
+  # 10.0.0.5
   # 10.0.0.6
-  # 10.0.0.7
+  10.0.0.7
 )
 
 # SSH options
