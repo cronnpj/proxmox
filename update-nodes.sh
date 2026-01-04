@@ -19,7 +19,6 @@ NODES=(10.0.0.20 10.0.0.21 10.0.0.22 10.0.0.23 10.0.0.24 10.0.0.25 10.0.0.26 10.
 PROD_LXC_IPS=(
   #10.0.0.5 # Proxmox-backup-server
   10.0.0.6 #Production-Docker-v2
-  #10.0.0.7 #Production-Docker
   10.0.0.8 #influxdb-template
 )
 
