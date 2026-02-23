@@ -1,1 +1,8 @@
+[Unit]
+Description=Proxmox CIFS storage watchdog (auto-remount ExternalStorage)
+After=network-online.target pve-cluster.service
+Wants=network-online.target
 
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pve-cifs-watchdog.sh
